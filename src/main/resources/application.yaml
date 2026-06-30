@@ -1,0 +1,3 @@
+spring:
+  application:
+    name: data-permission-spring-boot-starter
