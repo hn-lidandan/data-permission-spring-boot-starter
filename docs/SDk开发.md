@@ -120,28 +120,6 @@ data-permission:
     invalidate-topic: auth-context-invalidate
     audit-topic: data-permission-audit-topic
 
-  intercept:
-    fail-on-unsupported-sql: true
-    resources:
-      security_log:
-        resource-type: DORIS
-        table-names:
-          - normalized_security_log
-        filter-fields:
-          tenant: tenant_id
-          dept: dept_id
-          asset-group: asset_group_id
-          data-level: data_level
-
-      alert_event:
-        resource-type: POSTGRESQL
-        table-names:
-          - t_alert_event
-        filter-fields:
-          tenant: tenant_id
-          dept: dept_id
-          asset-group: asset_group_id
-          data-level: data_level
 ```
 
 ### 5.2 Request Identity Extractor
@@ -197,7 +175,7 @@ Context Manager 负责权限上下文获取、缓存、失效和异常处理。
 获取顺序：
 
 ```text
-1. 根据 tenant_id + user_id + client_app 生成 cache key
+1. 根据  client_app + tenant_id + user_id 生成 cache key
 2. 查询 Caffeine 本地缓存
 3. 命中则返回 PermissionContext
 4. 未命中则调用权限服务 /api/v1/permission/context/query
@@ -208,7 +186,7 @@ Context Manager 负责权限上下文获取、缓存、失效和异常处理。
 缓存 key：
 
 ```text
-tenant_id:user_id:client_app
+client_app:tenant_id:user_id
 ```
 
 缓存 value：

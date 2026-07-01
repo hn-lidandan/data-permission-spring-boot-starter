@@ -1,0 +1,3 @@
+org.com.it.permission.autoconfigure.DataPermissionPropertiesAutoConfiguration
+org.com.it.permission.autoconfigure.DataPermissionAutoConfiguration
+org.com.it.permission.autoconfigure.DataPermissionWebAutoConfiguration
