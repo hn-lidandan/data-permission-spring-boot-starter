@@ -38,6 +38,7 @@ public class DataPermissionWebInterceptor implements HandlerInterceptor {
             PermissionContextHolder.set(context);
             return true;
         } catch (DataPermissionException ex) {
+            // todo  待处理
             // 权限相关错误统一按 403 处理，避免没有权限时落到业务 Controller 或变成 500。
             PermissionContextHolder.clear();
             response.sendError(HttpServletResponse.SC_FORBIDDEN, ex.getMessage());

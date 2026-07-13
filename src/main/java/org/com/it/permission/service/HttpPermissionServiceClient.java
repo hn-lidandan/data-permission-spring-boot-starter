@@ -25,14 +25,19 @@ import java.time.Duration;
  */
 public class HttpPermissionServiceClient implements PermissionServiceClient {
 
+    /** 权限服务约定的成功 HTTP 状态码。 */
     private static final int HTTP_OK = 200;
 
+    /** 权限上下文查询接口地址，由 data-permission.service-url 配置提供。 */
     private final URI endpoint;
 
+    /** JDK 原生 HTTP 客户端，复用连接配置和连接超时时间。 */
     private final HttpClient httpClient;
 
+    /** 负责请求体序列化和响应体反序列化。 */
     private final ObjectMapper objectMapper;
 
+    /** 单次权限服务请求的整体超时时间。 */
     private final Duration requestTimeout;
 
     public HttpPermissionServiceClient(DataPermissionProperties properties) {
@@ -44,6 +49,9 @@ public class HttpPermissionServiceClient implements PermissionServiceClient {
         );
     }
 
+    /**
+     * 供测试或高级场景注入依赖，便于替换 HTTP 客户端、序列化器和超时配置。
+     */
     HttpPermissionServiceClient(URI endpoint,
                                 HttpClient httpClient,
                                 ObjectMapper objectMapper,
@@ -55,6 +63,7 @@ public class HttpPermissionServiceClient implements PermissionServiceClient {
     }
 
     private static ObjectMapper createObjectMapper() {
+        // 请求字段中可能存在可选字段，序列化时跳过 null，避免发送无意义字段给权限服务。
         return new ObjectMapper()
                 .setSerializationInclusion(JsonInclude.Include.NON_NULL);
     }
@@ -72,8 +81,11 @@ public class HttpPermissionServiceClient implements PermissionServiceClient {
     @Override
     public PermissionContext queryContext(PermissionIdentity identity) {
         try {
+            // 先把当前请求身份转换成权限服务接口需要的请求体，再统一序列化为 JSON。
             PermissionContextQueryRequest requestBody = PermissionContextQueryRequest.from(identity);
             String json = objectMapper.writeValueAsString(requestBody);
+
+            // 每次查询都带上请求级超时，避免权限服务无响应时阻塞业务请求线程。
             HttpRequest request = HttpRequest.newBuilder(endpoint)
                     .timeout(requestTimeout)
                     .header("Content-Type", "application/json")
@@ -81,18 +93,22 @@ public class HttpPermissionServiceClient implements PermissionServiceClient {
                     .POST(HttpRequest.BodyPublishers.ofString(json))
                     .build();
 
+            // 使用同步调用是为了在当前业务请求链路内拿到权限上下文后再继续执行数据查询。
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
             return handleResponse(response);
         } catch (InterruptedException ex) {
+            // 恢复中断标记，交给上层线程管理逻辑继续感知这次中断。
             Thread.currentThread().interrupt();
             throw new PermissionDeniedException("Permission service request was interrupted", ex);
         } catch (IOException | IllegalArgumentException ex) {
+            // 网络异常、序列化异常、非法 URI 等都视为无法确认权限，统一拒绝。
             throw new PermissionDeniedException("Permission service request failed", ex);
         }
     }
 
     private PermissionContext handleResponse(HttpResponse<String> response) throws IOException {
         if (response.statusCode() == HTTP_OK) {
+            // 200 但响应体为空同样不能放行，因为后续无法构造有效的数据权限上下文。
             if (!StringUtils.hasText(response.body())) {
                 throw new PermissionDeniedException("Permission service returned empty context");
             }
@@ -105,6 +121,7 @@ public class HttpPermissionServiceClient implements PermissionServiceClient {
 
     private PermissionContext readPermissionContext(String body) throws IOException {
         JsonNode root = objectMapper.readTree(body);
+
         // 兼容两种返回：一种是直接返回上下文对象；另一种是统一响应包在 data 字段里。
         JsonNode contextNode = root.has("data") && root.get("data").isObject() ? root.get("data") : root;
         return objectMapper.treeToValue(contextNode, PermissionContext.class);
@@ -140,6 +157,7 @@ public class HttpPermissionServiceClient implements PermissionServiceClient {
         }
 
         static PermissionContextQueryRequest from(PermissionIdentity identity) {
+            // tenant/user/dept/role 都是权限服务计算数据范围的必要维度，缺一项就不发起远程调用。
             requireText(identity.getTenantId(), "tenant_id");
             requireText(identity.getUserId(), "user_id");
             requireText(identity.getDeptId(), "dept_id");
