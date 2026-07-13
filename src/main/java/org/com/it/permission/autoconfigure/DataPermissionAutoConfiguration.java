@@ -64,7 +64,7 @@ public class DataPermissionAutoConfiguration {
      * <p>这里暴露的是底层 Cache，方便业务服务在特殊场景下通过同类型 Bean 替换默认缓存配置。</p>
      */
     @Bean
-    @ConditionalOnMissingBean
+    @ConditionalOnMissingBean(name = "permissionContextCaffeineCache")
     public Cache<String, PermissionContext> permissionContextCaffeineCache(DataPermissionProperties properties) {
         DataPermissionProperties.CacheProperties cache = properties.getCache();
         return Caffeine.newBuilder()

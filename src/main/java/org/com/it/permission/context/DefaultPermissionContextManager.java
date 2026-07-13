@@ -41,11 +41,20 @@ public class DefaultPermissionContextManager implements PermissionContextManager
 
     @Override
     public String buildCacheKey(PermissionIdentity identity) {
-        // clientApp 参与缓存 key，避免同一个用户在不同业务服务里的权限上下文互相污染。
+        requireText(identity.getTenantId(), "tenant_id");
+        requireText(identity.getUserId(), "user_id");
+        requireText(identity.getDeptId(), "dept_id");
+        requireText(identity.getRoleId(), "role_id");
+
+        // clientApp、部门和角色都参与缓存 key，避免同一用户在不同权限身份下复用旧上下文。
         String clientApp = StringUtils.hasText(identity.getClientApp())
                 ? identity.getClientApp()
                 : properties.requireClientApp();
-        return clientApp + ":" + identity.getTenantId() + ":" + identity.getUserId();
+        return clientApp
+                + ":" + identity.getTenantId()
+                + ":" + identity.getUserId()
+                + ":" + identity.getDeptId()
+                + ":" + identity.getRoleId();
     }
 
     @Override
@@ -70,5 +79,11 @@ public class DefaultPermissionContextManager implements PermissionContextManager
 
     private boolean isExpired(PermissionContext context) {
         return context.getExpiresAt() != null && context.getExpiresAt().isBefore(LocalDateTime.now());
+    }
+
+    private void requireText(String value, String fieldName) {
+        if (!StringUtils.hasText(value)) {
+            throw new PermissionDeniedException("Missing required permission identity: " + fieldName);
+        }
     }
 }
