@@ -1,3 +1,6 @@
 org.com.it.permission.autoconfigure.DataPermissionPropertiesAutoConfiguration
 org.com.it.permission.autoconfigure.DataPermissionAutoConfiguration
 org.com.it.permission.autoconfigure.DataPermissionWebAutoConfiguration
+org.com.it.permission.autoconfigure.DataPermissionSqlAutoConfiguration
+org.com.it.permission.autoconfigure.DataPermissionSceneAutoConfiguration
+org.com.it.permission.autoconfigure.DataPermissionFieldMaskAutoConfiguration

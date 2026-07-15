@@ -6,8 +6,12 @@ import org.com.it.permission.context.PermissionContextManager;
 import org.com.it.permission.identity.PermissionIdentity;
 import org.com.it.permission.identity.PermissionIdentityExtractor;
 import org.com.it.permission.model.PermissionContext;
+import org.com.it.permission.masking.PermissionJacksonModule;
+import org.com.it.permission.scene.PermissionSceneAspect;
 import org.com.it.permission.service.HttpPermissionServiceClient;
 import org.com.it.permission.service.PermissionServiceClient;
+import org.com.it.permission.sql.SqlRewriteEngine;
+import org.com.it.permission.sql.mybatis.DataPermissionMyBatisInterceptor;
 import org.com.it.permission.web.DataPermissionWebInterceptor;
 import org.com.it.permission.web.DataPermissionWebMvcConfigurer;
 import org.junit.jupiter.api.Test;
@@ -36,7 +40,10 @@ class DataPermissionAutoConfigurationTests {
             .withConfiguration(AutoConfigurations.of(
                     DataPermissionPropertiesAutoConfiguration.class,
                     DataPermissionAutoConfiguration.class,
-                    DataPermissionWebAutoConfiguration.class
+                    DataPermissionWebAutoConfiguration.class,
+                    DataPermissionSqlAutoConfiguration.class,
+                    DataPermissionSceneAutoConfiguration.class,
+                    DataPermissionFieldMaskAutoConfiguration.class
             ));
 
     @Test
@@ -130,6 +137,44 @@ class DataPermissionAutoConfigurationTests {
                             .containsExactly("normalized_security_log");
                     assertThat(properties.getKafka().isEnabled()).isTrue();
                 });
+    }
+
+    @Test
+    void shouldRegisterSqlBeansWhenSqlEnabled() {
+        // SQL 子开关打开后，注册 SQL 改写引擎和 MyBatis 拦截器。
+        contextRunner
+                .withPropertyValues(
+                        "data-permission.enabled=true",
+                        "data-permission.service-url=http://data-permission-service",
+                        "data-permission.sql.enabled=true"
+                )
+                .run(context -> {
+                    assertThat(context).hasSingleBean(SqlRewriteEngine.class);
+                    assertThat(context).hasSingleBean(DataPermissionMyBatisInterceptor.class);
+                });
+    }
+
+    @Test
+    void shouldRegisterSceneAspectWhenEnabled() {
+        // SDK 总开关打开且 AOP 类存在时，注册场景注解切面。
+        contextRunner
+                .withPropertyValues(
+                        "data-permission.enabled=true",
+                        "data-permission.service-url=http://data-permission-service"
+                )
+                .run(context -> assertThat(context).hasSingleBean(PermissionSceneAspect.class));
+    }
+
+    @Test
+    void shouldRegisterFieldMaskBeansWhenFieldMaskEnabled() {
+        // 字段脱敏子开关打开后，注册 Jackson Module，由业务 ObjectMapper 自动接入字段策略。
+        contextRunner
+                .withPropertyValues(
+                        "data-permission.enabled=true",
+                        "data-permission.service-url=http://data-permission-service",
+                        "data-permission.field-mask.enabled=true"
+                )
+                .run(context -> assertThat(context).hasSingleBean(PermissionJacksonModule.class));
     }
 
     @Test

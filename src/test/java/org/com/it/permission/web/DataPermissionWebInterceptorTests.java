@@ -2,6 +2,7 @@ package org.com.it.permission.web;
 
 import org.com.it.permission.context.PermissionContextHolder;
 import org.com.it.permission.context.PermissionContextManager;
+import org.com.it.permission.context.DataPermissionSceneHolder;
 import org.com.it.permission.exception.PermissionDeniedException;
 import org.com.it.permission.identity.PermissionIdentity;
 import org.com.it.permission.model.PermissionContext;
@@ -24,6 +25,7 @@ class DataPermissionWebInterceptorTests {
     void tearDown() {
         // 防止某个测试失败后 ThreadLocal 泄漏到下一个测试。
         PermissionContextHolder.clear();
+        DataPermissionSceneHolder.clear();
     }
 
     @Test
@@ -46,9 +48,11 @@ class DataPermissionWebInterceptorTests {
         assertThat(result).isTrue();
         assertThat(PermissionContextHolder.get()).containsSame(expectedContext);
 
+        DataPermissionSceneHolder.set("DETAIL");
         interceptor.afterCompletion(new MockHttpServletRequest(), new MockHttpServletResponse(), new Object(), null);
 
         assertThat(PermissionContextHolder.get()).isEmpty();
+        assertThat(DataPermissionSceneHolder.get()).isEmpty();
     }
 
     @Test
@@ -56,6 +60,7 @@ class DataPermissionWebInterceptorTests {
         // 模拟当前线程已经有旧上下文，权限拒绝时必须返回 403 且清理旧上下文。
         PermissionContext staleContext = new PermissionContext();
         PermissionContextHolder.set(staleContext);
+        DataPermissionSceneHolder.set("EXPORT");
         DataPermissionWebInterceptor interceptor = new DataPermissionWebInterceptor(
                 request -> {
                     throw new PermissionDeniedException("Missing required permission identity: tenant_id");
@@ -69,6 +74,7 @@ class DataPermissionWebInterceptorTests {
         assertThat(result).isFalse();
         assertThat(response.getStatus()).isEqualTo(403);
         assertThat(PermissionContextHolder.get()).isEmpty();
+        assertThat(DataPermissionSceneHolder.get()).isEmpty();
     }
 
     /**
