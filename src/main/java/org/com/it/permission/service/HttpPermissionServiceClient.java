@@ -2,13 +2,14 @@ package org.com.it.permission.service;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.com.it.permission.config.DataPermissionProperties;
 import org.com.it.permission.exception.PermissionDeniedException;
 import org.com.it.permission.identity.PermissionIdentity;
 import org.com.it.permission.model.PermissionContext;
 import org.springframework.util.StringUtils;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.io.IOException;
 import java.net.URI;
@@ -35,7 +36,7 @@ public class HttpPermissionServiceClient implements PermissionServiceClient {
     private final HttpClient httpClient;
 
     /** 负责请求体序列化和响应体反序列化。 */
-    private final ObjectMapper objectMapper;
+    private final JsonMapper jsonMapper;
 
     /** 单次权限服务请求的整体超时时间。 */
     private final Duration requestTimeout;
@@ -44,7 +45,7 @@ public class HttpPermissionServiceClient implements PermissionServiceClient {
         this(
                 URI.create(properties.getServiceUrl().trim()),
                 createHttpClient(properties),
-                createObjectMapper(),
+                createJsonMapper(),
                 requestTimeout(properties)
         );
     }
@@ -54,18 +55,19 @@ public class HttpPermissionServiceClient implements PermissionServiceClient {
      */
     HttpPermissionServiceClient(URI endpoint,
                                 HttpClient httpClient,
-                                ObjectMapper objectMapper,
+                                JsonMapper jsonMapper,
                                 Duration requestTimeout) {
         this.endpoint = endpoint;
         this.httpClient = httpClient;
-        this.objectMapper = objectMapper;
+        this.jsonMapper = jsonMapper;
         this.requestTimeout = requestTimeout;
     }
 
-    private static ObjectMapper createObjectMapper() {
+    private static JsonMapper createJsonMapper() {
         // 请求字段中可能存在可选字段，序列化时跳过 null，避免发送无意义字段给权限服务。
-        return new ObjectMapper()
-                .setSerializationInclusion(JsonInclude.Include.NON_NULL);
+        return JsonMapper.builder()
+                .changeDefaultPropertyInclusion(inclusion -> inclusion.withValueInclusion(JsonInclude.Include.NON_NULL))
+                .build();
     }
 
     private static HttpClient createHttpClient(DataPermissionProperties properties) {
@@ -83,7 +85,7 @@ public class HttpPermissionServiceClient implements PermissionServiceClient {
         try {
             // 先把当前请求身份转换成权限服务接口需要的请求体，再统一序列化为 JSON。
             PermissionContextQueryRequest requestBody = PermissionContextQueryRequest.from(identity);
-            String json = objectMapper.writeValueAsString(requestBody);
+            String json = jsonMapper.writeValueAsString(requestBody);
 
             // 每次查询都带上请求级超时，避免权限服务无响应时阻塞业务请求线程。
             HttpRequest request = HttpRequest.newBuilder(endpoint)
@@ -100,13 +102,13 @@ public class HttpPermissionServiceClient implements PermissionServiceClient {
             // 恢复中断标记，交给上层线程管理逻辑继续感知这次中断。
             Thread.currentThread().interrupt();
             throw new PermissionDeniedException("Permission service request was interrupted", ex);
-        } catch (IOException | IllegalArgumentException ex) {
-            // 网络异常、序列化异常、非法 URI 等都视为无法确认权限，统一拒绝。
+        } catch (IOException | JacksonException | IllegalArgumentException ex) {
+            // 网络异常、序列化异常（Jackson 3 为非受检异常）、非法 URI 等都视为无法确认权限，统一拒绝。
             throw new PermissionDeniedException("Permission service request failed", ex);
         }
     }
 
-    private PermissionContext handleResponse(HttpResponse<String> response) throws IOException {
+    private PermissionContext handleResponse(HttpResponse<String> response) {
         if (response.statusCode() == HTTP_OK) {
             // 200 但响应体为空同样不能放行，因为后续无法构造有效的数据权限上下文。
             if (!StringUtils.hasText(response.body())) {
@@ -119,12 +121,12 @@ public class HttpPermissionServiceClient implements PermissionServiceClient {
         throw new PermissionDeniedException("Permission service returned status " + response.statusCode());
     }
 
-    private PermissionContext readPermissionContext(String body) throws IOException {
-        JsonNode root = objectMapper.readTree(body);
+    private PermissionContext readPermissionContext(String body) {
+        JsonNode root = jsonMapper.readTree(body);
 
         // 兼容两种返回：一种是直接返回上下文对象；另一种是统一响应包在 data 字段里。
         JsonNode contextNode = root.has("data") && root.get("data").isObject() ? root.get("data") : root;
-        return objectMapper.treeToValue(contextNode, PermissionContext.class);
+        return jsonMapper.treeToValue(contextNode, PermissionContext.class);
     }
 
     /**

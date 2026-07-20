@@ -1,11 +1,11 @@
 package org.com.it.permission.service;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.com.it.permission.exception.PermissionDeniedException;
 import org.com.it.permission.identity.PermissionIdentity;
 import org.com.it.permission.model.PermissionContext;
 import org.junit.jupiter.api.Test;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
 
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLParameters;
@@ -42,7 +42,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  */
 class HttpPermissionServiceClientTests {
 
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final JsonMapper jsonMapper = JsonMapper.builder().build();
 
     @Test
     void shouldPostIdentityAndDeserializePermissionContext() throws Exception {
@@ -91,7 +91,7 @@ class HttpPermissionServiceClientTests {
         assertThat(request.headers().firstValue("Content-Type")).contains("application/json");
         assertThat(request.headers().firstValue("Accept")).contains("application/json");
 
-        JsonNode body = objectMapper.readTree(httpClient.capturedRequestBody());
+        JsonNode body = jsonMapper.readTree(httpClient.capturedRequestBody());
         assertThat(body.get("tenant_id").asText()).isEqualTo("t001");
         assertThat(body.get("user_id").asText()).isEqualTo("u001");
         assertThat(body.get("dept_id").asText()).isEqualTo("d001");
@@ -164,7 +164,7 @@ class HttpPermissionServiceClientTests {
         return new HttpPermissionServiceClient(
                 URI.create("http://localhost:8081/data-auth-center/data-permissions/context"),
                 httpClient,
-                objectMapper,
+                jsonMapper,
                 Duration.ofSeconds(3)
         );
     }

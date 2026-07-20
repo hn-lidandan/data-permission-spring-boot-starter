@@ -1,10 +1,12 @@
 package org.com.it.permission.masking;
 
-import com.fasterxml.jackson.databind.BeanDescription;
-import com.fasterxml.jackson.databind.SerializationConfig;
-import com.fasterxml.jackson.databind.introspect.AnnotatedMember;
-import com.fasterxml.jackson.databind.ser.BeanPropertyWriter;
-import com.fasterxml.jackson.databind.ser.BeanSerializerModifier;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import tools.jackson.databind.BeanDescription;
+import tools.jackson.databind.SerializationConfig;
+import tools.jackson.databind.introspect.AnnotatedMember;
+import tools.jackson.databind.ser.BeanPropertyWriter;
+import tools.jackson.databind.ser.ValueSerializerModifier;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -12,7 +14,9 @@ import java.util.List;
 /**
  * 为 Jackson Bean 字段替换支持权限策略的 Writer。
  */
-public class PermissionBeanSerializerModifier extends BeanSerializerModifier {
+public class PermissionBeanSerializerModifier extends ValueSerializerModifier {
+
+    private static final Logger log = LoggerFactory.getLogger(PermissionBeanSerializerModifier.class);
 
     private final DataMaskingEngine maskingEngine;
 
@@ -28,7 +32,7 @@ public class PermissionBeanSerializerModifier extends BeanSerializerModifier {
      */
     @Override
     public List<BeanPropertyWriter> changeProperties(SerializationConfig config,
-                                                     BeanDescription beanDesc,
+                                                     BeanDescription.Supplier beanDesc,
                                                      List<BeanPropertyWriter> beanProperties) {
         List<BeanPropertyWriter> writers = new ArrayList<>(beanProperties.size());
         for (BeanPropertyWriter writer : beanProperties) {
@@ -38,6 +42,9 @@ public class PermissionBeanSerializerModifier extends BeanSerializerModifier {
                     resolvePermissionFieldName(writer)
             ));
         }
+        // Jackson 每个 Bean 类型只构建一次序列化器，这条日志每个类型只会出现一次。
+        log.info("[data-permission] wrapped {} property writer(s) for bean type [{}]",
+                writers.size(), beanDesc.getBeanClass().getName());
         return writers;
     }
 

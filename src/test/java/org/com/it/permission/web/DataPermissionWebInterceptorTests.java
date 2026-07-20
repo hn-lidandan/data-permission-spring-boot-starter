@@ -6,10 +6,13 @@ import org.com.it.permission.context.DataPermissionSceneHolder;
 import org.com.it.permission.exception.PermissionDeniedException;
 import org.com.it.permission.identity.PermissionIdentity;
 import org.com.it.permission.model.PermissionContext;
+import org.com.it.permission.scene.PermissionScene;
+import org.com.it.permission.scene.PermissionScenes;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.web.method.HandlerMethod;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -75,6 +78,80 @@ class DataPermissionWebInterceptorTests {
         assertThat(response.getStatus()).isEqualTo(403);
         assertThat(PermissionContextHolder.get()).isEmpty();
         assertThat(DataPermissionSceneHolder.get()).isEmpty();
+    }
+
+    @Test
+    void shouldBindSceneFromHandlerMethodAnnotation() throws Exception {
+        // 方法上有 @PermissionScene 时，preHandle 要把场景绑定到当前线程，
+        // 场景生命周期覆盖响应体序列化阶段，直到 afterCompletion 才清理。
+        DataPermissionWebInterceptor interceptor = interceptor();
+        HandlerMethod handler = new HandlerMethod(new AnnotatedEndpoint(),
+                AnnotatedEndpoint.class.getMethod("queryList"));
+
+        boolean result = interceptor.preHandle(new MockHttpServletRequest(), new MockHttpServletResponse(), handler);
+
+        assertThat(result).isTrue();
+        // controller 返回后（切面已出栈）场景必须仍然可读，这是字段脱敏能覆盖序列化阶段的关键。
+        assertThat(DataPermissionSceneHolder.get()).contains(PermissionScenes.QUERY);
+
+        interceptor.afterCompletion(new MockHttpServletRequest(), new MockHttpServletResponse(), handler, null);
+        assertThat(DataPermissionSceneHolder.get()).isEmpty();
+    }
+
+    @Test
+    void shouldBindSceneFromControllerClassAnnotationWhenMethodHasNone() throws Exception {
+        DataPermissionWebInterceptor interceptor = interceptor();
+        HandlerMethod handler = new HandlerMethod(new ClassAnnotatedEndpoint(),
+                ClassAnnotatedEndpoint.class.getMethod("export"));
+
+        interceptor.preHandle(new MockHttpServletRequest(), new MockHttpServletResponse(), handler);
+
+        assertThat(DataPermissionSceneHolder.get()).contains(PermissionScenes.EXPORT);
+    }
+
+    @Test
+    void shouldNotBindSceneWhenHandlerHasNoAnnotation() throws Exception {
+        DataPermissionWebInterceptor interceptor = interceptor();
+        HandlerMethod handler = new HandlerMethod(new PlainEndpoint(),
+                PlainEndpoint.class.getMethod("plain"));
+
+        interceptor.preHandle(new MockHttpServletRequest(), new MockHttpServletResponse(), handler);
+
+        assertThat(DataPermissionSceneHolder.get()).isEmpty();
+    }
+
+    private DataPermissionWebInterceptor interceptor() {
+        return new DataPermissionWebInterceptor(
+                request -> PermissionIdentity.builder()
+                        .tenantId("t001")
+                        .userId("u001")
+                        .clientApp("log-service")
+                        .build(),
+                new StaticPermissionContextManager(new PermissionContext())
+        );
+    }
+
+    static class AnnotatedEndpoint {
+
+        @PermissionScene(PermissionScenes.QUERY)
+        public String queryList() {
+            return "ok";
+        }
+    }
+
+    @PermissionScene(PermissionScenes.EXPORT)
+    static class ClassAnnotatedEndpoint {
+
+        public String export() {
+            return "ok";
+        }
+    }
+
+    static class PlainEndpoint {
+
+        public String plain() {
+            return "ok";
+        }
     }
 
     /**

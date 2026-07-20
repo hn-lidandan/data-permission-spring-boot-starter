@@ -1,8 +1,7 @@
 package org.com.it.permission.model;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.junit.jupiter.api.Test;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.time.LocalDateTime;
 
@@ -18,9 +17,8 @@ class PermissionContextJsonTests {
 
     @Test
     void shouldDeserializePermissionContextFromServiceJson() throws Exception {
-        // 普通 ObjectMapper 需要注册 JavaTimeModule，才能处理 Java 8 时间类型。
-        ObjectMapper objectMapper = new ObjectMapper();
-        objectMapper.registerModule(new JavaTimeModule());
+        // Jackson 3 内置 Java 8 时间类型支持，不再需要单独注册 JavaTimeModule。
+        JsonMapper objectMapper = JsonMapper.builder().build();
         String json = """
                 {
                   "user_id": "u001",
@@ -101,8 +99,7 @@ class PermissionContextJsonTests {
     @Test
     void shouldDeserializeRealPermissionServiceResponse() throws Exception {
         // 使用权限服务当前真实返回样例，覆盖微秒级 LocalDateTime 和 export_policies 中 allowed/is_allowed 并存的情况。
-        ObjectMapper objectMapper = new ObjectMapper();
-        objectMapper.registerModule(new JavaTimeModule());
+        JsonMapper objectMapper = JsonMapper.builder().build();
         String json = """
                 {
                   "asset_group_scope": [

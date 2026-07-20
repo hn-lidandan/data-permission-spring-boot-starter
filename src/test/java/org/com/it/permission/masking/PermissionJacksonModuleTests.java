@@ -1,7 +1,6 @@
 package org.com.it.permission.masking;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.com.it.permission.context.DataPermissionSceneHolder;
 import org.com.it.permission.context.PermissionContextHolder;
 import org.com.it.permission.model.FieldPolicy;
@@ -10,6 +9,7 @@ import org.com.it.permission.model.PermissionType;
 import org.com.it.permission.scene.PermissionScenes;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.util.List;
 
@@ -20,7 +20,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class PermissionJacksonModuleTests {
 
-    private final ObjectMapper objectMapper = createObjectMapper();
+    private final JsonMapper jsonMapper = createJsonMapper();
 
     @AfterEach
     void tearDown() {
@@ -32,7 +32,7 @@ class PermissionJacksonModuleTests {
     void shouldSkipFieldPoliciesWhenSceneIsMissing() throws Exception {
         PermissionContextHolder.set(context());
 
-        String json = objectMapper.writeValueAsString(new LogDetailVO("13812345678", "raw", "zhangsan"));
+        String json = jsonMapper.writeValueAsString(new LogDetailVO("13812345678", "raw", "zhangsan"));
 
         assertThat(json).contains("\"mobile\":\"13812345678\"");
         assertThat(json).contains("\"rawLog\":\"raw\"");
@@ -43,7 +43,7 @@ class PermissionJacksonModuleTests {
         PermissionContextHolder.set(context());
         DataPermissionSceneHolder.set(PermissionScenes.DETAIL);
 
-        String json = objectMapper.writeValueAsString(new LogDetailVO("13812345678", "raw", "zhangsan"));
+        String json = jsonMapper.writeValueAsString(new LogDetailVO("13812345678", "raw", "zhangsan"));
 
         assertThat(json).contains("\"mobile\":\"138****5678\"");
         assertThat(json).contains("\"rawLog\":null");
@@ -55,21 +55,21 @@ class PermissionJacksonModuleTests {
         PermissionContextHolder.set(context());
         DataPermissionSceneHolder.set(PermissionScenes.EXPORT);
 
-        String json = objectMapper.writeValueAsString(new LogDetailVO("13812345678", "raw", "zhangsan"));
+        String json = jsonMapper.writeValueAsString(new LogDetailVO("13812345678", "raw", "zhangsan"));
 
         assertThat(json).contains("\"mobile\":\"13812345678\"");
         assertThat(json).contains("\"rawLog\":null");
     }
 
-    private ObjectMapper createObjectMapper() {
-        ObjectMapper mapper = new ObjectMapper();
-        mapper.setSerializationInclusion(JsonInclude.Include.NON_NULL);
-        mapper.registerModule(new PermissionJacksonModule(
-                new PermissionBeanSerializerModifier(
-                        new DataMaskingEngine(new FieldPolicyMatcher())
-                )
-        ));
-        return mapper;
+    private JsonMapper createJsonMapper() {
+        return JsonMapper.builder()
+                .changeDefaultPropertyInclusion(inclusion -> inclusion.withValueInclusion(JsonInclude.Include.NON_NULL))
+                .addModule(new PermissionJacksonModule(
+                        new PermissionBeanSerializerModifier(
+                                new DataMaskingEngine(new FieldPolicyMatcher())
+                        )
+                ))
+                .build();
     }
 
     private PermissionContext context() {

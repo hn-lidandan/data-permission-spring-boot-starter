@@ -1,10 +1,9 @@
 package org.com.it.permission.model;
 
-import com.fasterxml.jackson.core.JsonParser;
-import com.fasterxml.jackson.databind.DeserializationContext;
-import com.fasterxml.jackson.databind.JsonDeserializer;
+import tools.jackson.core.JsonParser;
+import tools.jackson.databind.DeserializationContext;
+import tools.jackson.databind.ValueDeserializer;
 
-import java.io.IOException;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 
@@ -15,11 +14,11 @@ import java.time.OffsetDateTime;
  * 会直接按 LocalDateTime 解析；如果返回 {@code 2026-06-29T18:00:00+08:00}，
  * 会取其中的本地日期时间部分，得到 {@code 2026-06-29T18:00:00}。</p>
  */
-public class FlexibleLocalDateTimeDeserializer extends JsonDeserializer<LocalDateTime> {
+public class FlexibleLocalDateTimeDeserializer extends ValueDeserializer<LocalDateTime> {
 
     @Override
-    public LocalDateTime deserialize(JsonParser parser, DeserializationContext context) throws IOException {
-        String value = parser.getText();
+    public LocalDateTime deserialize(JsonParser parser, DeserializationContext context) {
+        String value = parser.getString();
         if (value == null || value.isBlank()) {
             return null;
         }

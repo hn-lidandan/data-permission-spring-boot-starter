@@ -9,6 +9,8 @@ public final class PermissionScenes {
 
     public static final String EXPORT = "EXPORT";
 
+    public static final String QUERY = "QUERY";
+
     /**
      * 常量类不允许实例化。
      */

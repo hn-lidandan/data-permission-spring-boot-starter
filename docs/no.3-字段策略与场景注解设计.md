@@ -525,9 +525,245 @@ masking/
 | `MaskRules` | 内置脱敏规则 |
 | `PermissionJacksonModule` | 接入 Jackson 序列化流程 |
 
-## 9. 与其他模块的关系
+## 9. 业务服务使用步骤
 
-### 9.1 和 SQL 过滤
+### 9.1 开启配置
+
+业务服务需要先开启 SDK 和字段策略：
+
+```yaml
+data-permission:
+  enabled: true
+  service-url: http://permission-service/api/v1/permission/context
+  client-app: log-service
+
+  web:
+    enabled: true
+
+  field-mask:
+    enabled: true
+```
+
+说明：
+
+```text
+enabled=true 负责开启整个 SDK。
+service-url 是 SDK 获取 PermissionContext 的权限服务接口地址。
+client-app 是当前业务服务标识。
+web.enabled=true 负责请求进入时获取 PermissionContext。
+field-mask.enabled=true 负责注册 Jackson 字段策略模块。
+```
+
+如果业务服务还需要同时启用 SQL 行级过滤，可以继续开启：
+
+```yaml
+data-permission:
+  sql:
+    enabled: true
+```
+
+完整示例：
+
+```yaml
+data-permission:
+  enabled: true
+  service-url: http://permission-service/api/v1/permission/context
+  client-app: log-service
+
+  web:
+    enabled: true
+
+  sql:
+    enabled: true
+
+  field-mask:
+    enabled: true
+```
+
+注意：
+
+```text
+字段策略规则本身不写在业务服务配置文件里。
+字段策略来自权限服务返回的 PermissionContext.field_policies。
+业务服务配置文件只负责打开 SDK、Web 拦截器、SQL 过滤、字段策略等模块。
+```
+
+如果业务服务要使用 `@PermissionScene`，需要确保 AOP 可用。通常业务服务需要引入：
+
+```xml
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-aop</artifactId>
+</dependency>
+```
+
+### 9.2 确保请求能拿到权限上下文
+
+请求进入业务服务时，SDK Web 拦截器会从 Header 提取身份：
+
+```text
+X-Tenant-Id
+X-User-Id
+X-Dept-Id
+X-Role-Id
+```
+
+然后调用权限服务获取 `PermissionContext`，并写入：
+
+```java
+PermissionContextHolder
+```
+
+字段策略后续只从当前线程的 `PermissionContextHolder` 读取上下文，不会再次调用权限服务。
+
+### 9.3 权限服务返回 field_policies
+
+权限上下文中需要包含字段策略：
+
+```json
+{
+  "field_policies": [
+    {
+      "field_name": "phone",
+      "mask_regex": "PHONE",
+      "permission_type": "MASK",
+      "scene": ["DETAIL"]
+    },
+    {
+      "field_name": "raw_log",
+      "mask_regex": null,
+      "permission_type": "HIDE",
+      "scene": ["DETAIL", "EXPORT"]
+    }
+  ]
+}
+```
+
+字段策略的含义：
+
+```text
+phone 在 DETAIL 场景下脱敏。
+raw_log 在 DETAIL 和 EXPORT 场景下隐藏。
+```
+
+### 9.4 在接口上声明场景
+
+普通列表接口不写 `@PermissionScene`，字段策略不会处理：
+
+```java
+@GetMapping("/list")
+public List<LogListVO> list() {
+    return service.list();
+}
+```
+
+详情接口需要显式声明 `DETAIL`：
+
+```java
+@PermissionScene(PermissionScenes.DETAIL)
+@GetMapping("/detail")
+public LogDetailVO detail() {
+    return service.detail();
+}
+```
+
+导出接口需要显式声明 `EXPORT`：
+
+```java
+@PermissionScene(PermissionScenes.EXPORT)
+@GetMapping("/export")
+public void export() {
+    service.export();
+}
+```
+
+### 9.5 在 DTO 字段上声明权限字段名
+
+如果 DTO 字段名和权限服务里的 `field_name` 不一致，需要加 `@PermissionField`。
+
+示例：
+
+```java
+public class LogDetailVO {
+
+    @PermissionField("phone")
+    private String mobile;
+
+    @PermissionField("raw_log")
+    private String rawLog;
+
+    private String username;
+}
+```
+
+含义：
+
+```text
+mobile 字段按 phone 匹配字段策略。
+rawLog 字段按 raw_log 匹配字段策略。
+username 没有注解，按输出字段名或 Java 字段名兜底匹配。
+```
+
+如果 DTO 字段名和 `field_name` 本来一致，可以不写 `@PermissionField`：
+
+```java
+private String phone;
+```
+
+### 9.6 预期输出示例
+
+详情接口：
+
+```java
+@PermissionScene(PermissionScenes.DETAIL)
+```
+
+业务原始返回：
+
+```json
+{
+  "mobile": "13812345678",
+  "rawLog": "原始日志内容",
+  "username": "zhangsan"
+}
+```
+
+字段策略处理后：
+
+```json
+{
+  "mobile": "138****5678",
+  "rawLog": null,
+  "username": "zhangsan"
+}
+```
+
+普通列表接口没有 `@PermissionScene`，则不会处理字段：
+
+```json
+{
+  "mobile": "13812345678",
+  "rawLog": "原始日志内容",
+  "username": "zhangsan"
+}
+```
+
+### 9.7 常见排查点
+
+如果字段没有被处理，优先检查：
+
+```text
+1. data-permission.field-mask.enabled 是否为 true。
+2. 当前接口是否显式标注了 @PermissionScene。
+3. 当前 scene 是否在 policy.scene 中。
+4. PermissionContext.field_policies 是否有对应 field_name。
+5. DTO 字段名和 field_name 不一致时，是否加了 @PermissionField。
+6. 业务返回是否经过 Jackson 序列化。
+```
+
+## 10. 与其他模块的关系
+
+### 10.1 和 SQL 过滤
 
 SQL 过滤不依赖 `@PermissionScene`。
 
@@ -538,7 +774,7 @@ tenant_id = ?
 AND dept_id IN (?, ?)
 ```
 
-### 9.2 和导出控制
+### 10.2 和导出控制
 
 导出接口需要显式声明：
 
@@ -548,7 +784,7 @@ AND dept_id IN (?, ?)
 
 后续导出控制模块会基于 `EXPORT` 场景匹配 `export_policies`。
 
-### 9.3 和 Web 拦截器
+### 10.3 和 Web 拦截器
 
 Web 拦截器负责请求结束时清理：
 
@@ -559,7 +795,7 @@ DataPermissionSceneHolder
 
 AOP 也需要在方法执行结束后恢复旧场景，防止嵌套调用污染场景。
 
-## 10. 当前 MVP 结论
+## 11. 当前 MVP 结论
 
 ```text
 普通列表接口不写 @PermissionScene，字段策略不处理。
